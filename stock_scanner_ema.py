@@ -14,7 +14,7 @@ st.set_page_config(page_title="주식 스캐너 EMA", page_icon="📊", layout="
 st.title("📊 한국 주식 종목 검색기 — EMA 밴드 스캐너")
 st.markdown("""
 **검색 조건 (일봉 기준)**
-- 📉 **EMA48 < SMA224 < SMA448** — 장기 하락 배열 구간 (저점 매집 구간)
+- 📉 **EMA48 < SMA60 < SMA224 < SMA448** — 장기 하락 배열 구간 (저점 매집 구간)
 - 🎯 **EMA45 < 종가 < EMA52** — 단기 EMA 밴드 안에 종가 위치
 - 💰 **주가 범위** 조건 유지
 - 🚫 ETF · 스팩 · 우선주 · 거래정지 · 투자경고 · 관리종목 · 환기종목 자동 제외
@@ -44,6 +44,7 @@ st.sidebar.markdown("**📐 이동평균 파라미터**")
 ema_short = st.sidebar.number_input("단기 EMA 하한 (종가 >)", value=45, min_value=1)
 ema_long  = st.sidebar.number_input("단기 EMA 상한 (종가 <)", value=52, min_value=1)
 ema_mid   = st.sidebar.number_input("중기 EMA (EMA48 기준)", value=48, min_value=1)
+sma_short = st.sidebar.number_input("단기 SMA (SMA60 기준)", value=60, min_value=1)
 sma_mid   = st.sidebar.number_input("중기 SMA (SMA224 기준)", value=224, min_value=1)
 sma_long  = st.sidebar.number_input("장기 SMA (SMA448 기준)", value=448, min_value=1)
 
@@ -379,12 +380,12 @@ def apply_price_volume_filter(data: pd.DataFrame, min_price, max_price, min_vol)
 
 
 # ── 일봉 EMA/SMA 조건 검증 (단일 종목) ──────────────────────────
-def check_ema_conditions(code_6, p_ema_short, p_ema_long, p_ema_mid, p_sma_mid, p_sma_long):
+def check_ema_conditions(code_6, p_ema_short, p_ema_long, p_ema_mid, p_sma_short, p_sma_mid, p_sma_long):
     """
     일봉 기준 조건 검증:
-      1) EMA{p_ema_mid} < SMA{p_sma_mid} < SMA{p_sma_long}  (장기 하락 배열)
-      2) EMA{p_ema_short} < 종가 < EMA{p_ema_long}           (단기 EMA 밴드 내 위치)
-    반환: (pass_all, close, ema_short_val, ema_long_val, ema_mid_val, sma_mid_val, sma_long_val)
+      1) EMA{p_ema_mid} < SMA{p_sma_short} < SMA{p_sma_mid} < SMA{p_sma_long}  (장기 하락 배열)
+      2) EMA{p_ema_short} < 종가 < EMA{p_ema_long}                               (단기 EMA 밴드 내 위치)
+    반환: (pass_all, close, ema_short_val, ema_long_val, ema_mid_val, sma_short_val, sma_mid_val, sma_long_val)
     """
     # SMA448 계산에 충분한 데이터 확보 (448 + 여유 50일)
     need_days = p_sma_long + 50
@@ -417,32 +418,33 @@ def check_ema_conditions(code_6, p_ema_short, p_ema_long, p_ema_mid, p_sma_mid, 
             ema_mid = float(close.ewm(span=p_ema_mid,   adjust=False).mean().iloc[-1])  # EMA48
 
             # SMA 계산
-            sma_mid  = float(close.rolling(p_sma_mid).mean().iloc[-1])   # SMA224
-            sma_long = float(close.rolling(p_sma_long).mean().iloc[-1])  # SMA448
+            sma_short = float(close.rolling(p_sma_short).mean().iloc[-1])  # SMA60
+            sma_mid   = float(close.rolling(p_sma_mid).mean().iloc[-1])    # SMA224
+            sma_long  = float(close.rolling(p_sma_long).mean().iloc[-1])   # SMA448
 
             curr_close = float(close.iloc[-1])
 
-            # 조건 1: EMA48 < SMA224 < SMA448
-            cond_order = (ema_mid < sma_mid) and (sma_mid < sma_long)
+            # 조건 1: EMA48 < SMA60 < SMA224 < SMA448
+            cond_order = (ema_mid < sma_short) and (sma_short < sma_mid) and (sma_mid < sma_long)
 
             # 조건 2: EMA45 < 종가 < EMA52
             cond_band  = (ema_s < curr_close) and (curr_close < ema_l)
 
             pass_all = cond_order and cond_band
 
-            return pass_all, curr_close, ema_s, ema_l, ema_mid, sma_mid, sma_long
+            return pass_all, curr_close, ema_s, ema_l, ema_mid, sma_short, sma_mid, sma_long
 
         except Exception:
             continue
 
-    return False, None, None, None, None, None, None
+    return False, None, None, None, None, None, None, None
 
 
 # ── 병렬 검증 래퍼 ───────────────────────────────────────────────
-def check_one(row_tuple, p_ema_short, p_ema_long, p_ema_mid, p_sma_mid, p_sma_long):
+def check_one(row_tuple, p_ema_short, p_ema_long, p_ema_mid, p_sma_short, p_sma_mid, p_sma_long):
     idx, row = row_tuple
     code   = row['종목코드']
-    result = check_ema_conditions(code, p_ema_short, p_ema_long, p_ema_mid, p_sma_mid, p_sma_long)
+    result = check_ema_conditions(code, p_ema_short, p_ema_long, p_ema_mid, p_sma_short, p_sma_mid, p_sma_long)
     return idx, row, result
 
 
@@ -523,7 +525,7 @@ if st.button("🔍 종목 검색 시작", use_container_width=True):
                 futures = {
                     executor.submit(
                         check_one, row_tuple,
-                        ema_short, ema_long, ema_mid, sma_mid, sma_long
+                        ema_short, ema_long, ema_mid, sma_short, sma_mid, sma_long
                     ): row_tuple
                     for row_tuple in rows_list
                 }
@@ -535,7 +537,7 @@ if st.button("🔍 종목 검색 시작", use_container_width=True):
                     try:
                         idx, row, (pass_all, curr_close,
                                    ema_s_val, ema_l_val, ema_mid_val,
-                                   sma_mid_val, sma_long_val) = future.result()
+                                   sma_short_val, sma_mid_val, sma_long_val) = future.result()
                     except Exception:
                         status_text.text(f"⚡ [{done_count}/{total}] 검증 중...")
                         continue
@@ -546,18 +548,19 @@ if st.button("🔍 종목 검색 시작", use_container_width=True):
 
                     if pass_all:
                         results.append({
-                            '종목명':          name,
-                            '종목코드':        code,
-                            '현재가(원)':      row['close'],
-                            '거래량':          row['volume'],
-                            '등락률(%)':       row['change'],
-                            f'EMA{ema_short}': round(ema_s_val,   0) if ema_s_val   else None,
-                            f'EMA{ema_long}':  round(ema_l_val,   0) if ema_l_val   else None,
-                            f'EMA{ema_mid}':   round(ema_mid_val, 0) if ema_mid_val else None,
-                            f'SMA{sma_mid}':   round(sma_mid_val, 0) if sma_mid_val else None,
-                            f'SMA{sma_long}':  round(sma_long_val,0) if sma_long_val else None,
-                            '52주 신고가':     row.get('price_52_week_high', None),
-                            'name_raw':        row['name'],
+                            '종목명':           name,
+                            '종목코드':         code,
+                            '현재가(원)':       row['close'],
+                            '거래량':           row['volume'],
+                            '등락률(%)':        row['change'],
+                            f'EMA{ema_short}':  round(ema_s_val,    0) if ema_s_val    else None,
+                            f'EMA{ema_long}':   round(ema_l_val,    0) if ema_l_val    else None,
+                            f'EMA{ema_mid}':    round(ema_mid_val,  0) if ema_mid_val  else None,
+                            f'SMA{sma_short}':  round(sma_short_val,0) if sma_short_val else None,
+                            f'SMA{sma_mid}':    round(sma_mid_val,  0) if sma_mid_val  else None,
+                            f'SMA{sma_long}':   round(sma_long_val, 0) if sma_long_val else None,
+                            '52주 신고가':      row.get('price_52_week_high', None),
+                            'name_raw':         row['name'],
                         })
 
             progress_bar.empty()
@@ -573,21 +576,22 @@ if st.button("🔍 종목 검색 시작", use_container_width=True):
                 display_cols = [
                     '종목명', '종목코드', '현재가(원)', '거래량', '등락률(%)',
                     f'EMA{ema_short}', f'EMA{ema_long}', f'EMA{ema_mid}',
-                    f'SMA{sma_mid}', f'SMA{sma_long}', '52주 신고가'
+                    f'SMA{sma_short}', f'SMA{sma_mid}', f'SMA{sma_long}', '52주 신고가'
                 ]
                 display_cols = [c for c in display_cols if c in result_df.columns]
                 display = result_df[display_cols].copy()
 
                 fmt = {
-                    '현재가(원)':         '{:,.0f}',
-                    '거래량':             '{:,.0f}',
-                    '등락률(%)':          '{:+.2f}',
-                    f'EMA{ema_short}':    '{:,.0f}',
-                    f'EMA{ema_long}':     '{:,.0f}',
-                    f'EMA{ema_mid}':      '{:,.0f}',
-                    f'SMA{sma_mid}':      '{:,.0f}',
-                    f'SMA{sma_long}':     '{:,.0f}',
-                    '52주 신고가':        '{:,.0f}',
+                    '현재가(원)':          '{:,.0f}',
+                    '거래량':              '{:,.0f}',
+                    '등락률(%)':           '{:+.2f}',
+                    f'EMA{ema_short}':     '{:,.0f}',
+                    f'EMA{ema_long}':      '{:,.0f}',
+                    f'EMA{ema_mid}':       '{:,.0f}',
+                    f'SMA{sma_short}':     '{:,.0f}',
+                    f'SMA{sma_mid}':       '{:,.0f}',
+                    f'SMA{sma_long}':      '{:,.0f}',
+                    '52주 신고가':         '{:,.0f}',
                 }
                 st.dataframe(
                     display.style.format(fmt, na_rep="-"),
