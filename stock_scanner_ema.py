@@ -700,57 +700,96 @@ def render_financial_chart(name: str, code: str, op_series: pd.Series, debt_seri
       ctx.beginPath();ctx.moveTo(chart.chartArea.right,chart.chartArea.top);ctx.lineTo(chart.chartArea.right,chart.chartArea.bottom);ctx.strokeStyle='#000';ctx.lineWidth=1.5;ctx.stroke();
 
       // ── 부채비율: yLeft 0선 기준으로 canvas에 직접 그리기 ────
-      // 차트 영역 높이 대비 부채비율 스케일 산출
       const chartH = chart.chartArea.bottom - chart.chartArea.top;
-      const yRange = yLeft.max - yLeft.min; // yLeft의 전체 값 범위
-      // 부채비율 최대값 → 픽셀당 비율 계산 (영업이익 단위 기준으로 환산)
       const maxDebt = Math.max(...debtValsRaw.filter(v=>v!==null), 1);
-      // 부채비율 1단위를 yLeft 픽셀로 변환하는 스케일:
-      // 0선 아래로 차트 전체 높이의 40% 를 maxDebt 값에 대응
       const debtPixelPerUnit = (chartH * 0.38) / maxDebt;
 
-      const barW = meta0.data.length > 0 ? meta0.data[0].width * 0.72 : 18;
+      // 영업이익 막대의 원래 전체 폭
+      const fullBarW = meta0.data.length > 0 ? meta0.data[0].width : 24;
+
+      function drawRoundedBar(cx, w, top, bot, color) {{
+        const h = bot - top;
+        if(h <= 0) return;
+        const r = Math.min(4, h / 2);
+        ctx.beginPath();
+        ctx.moveTo(cx - w/2, top);
+        ctx.lineTo(cx + w/2, top);
+        ctx.lineTo(cx + w/2, bot - r);
+        ctx.quadraticCurveTo(cx + w/2, bot, cx + w/2 - r, bot);
+        ctx.lineTo(cx - w/2 + r, bot);
+        ctx.quadraticCurveTo(cx - w/2, bot, cx - w/2, bot - r);
+        ctx.lineTo(cx - w/2, top);
+        ctx.closePath();
+        ctx.fillStyle = color;
+        ctx.fill();
+      }}
 
       debtValsRaw.forEach((rawVal, i)=>{{
         if(rawVal===null) return;
+        const opVal   = opVals[i];
+        // 영업이익이 음수이면 → 아래쪽 공간이 겹침 → 나란히 배치
+        const overlap = (opVal !== null && opVal < 0);
+
+        const barH   = rawVal * debtPixelPerUnit;
+        const barTop = zeroY;
+        const barBot = zeroY + barH;
+
+        // 겹칠 때: 폭 절반씩 나눠서 나란히
+        // 겹치지 않을 때: 원래 폭 그대로 중앙
         const xCenter = xScale.getPixelForValue(i);
-        const barH    = rawVal * debtPixelPerUnit;
-        const barTop  = zeroY;            // 0선에서 시작
-        const barBot  = zeroY + barH;     // 아래로 뻗음
+        const gap = 2; // 두 막대 사이 간격
+        let debtW, debtCX, opShiftCX;
 
-        // 막대 그리기 (둥근 하단)
-        const r = Math.min(4, barH / 2);
-        ctx.beginPath();
-        ctx.moveTo(xCenter - barW/2, barTop);
-        ctx.lineTo(xCenter + barW/2, barTop);
-        ctx.lineTo(xCenter + barW/2, barBot - r);
-        ctx.quadraticCurveTo(xCenter + barW/2, barBot, xCenter + barW/2 - r, barBot);
-        ctx.lineTo(xCenter - barW/2 + r, barBot);
-        ctx.quadraticCurveTo(xCenter - barW/2, barBot, xCenter - barW/2, barBot - r);
-        ctx.lineTo(xCenter - barW/2, barTop);
-        ctx.closePath();
-        ctx.fillStyle = 'rgba(224,112,16,0.82)';
-        ctx.fill();
+        if(overlap) {{
+          debtW     = fullBarW / 2 - gap / 2;
+          debtCX    = xCenter + fullBarW / 4 + gap / 2;  // 오른쪽
+          opShiftCX = xCenter - fullBarW / 4 - gap / 2;  // 왼쪽 (영업이익용)
+        }} else {{
+          debtW     = fullBarW * 0.72;
+          debtCX    = xCenter;
+          opShiftCX = xCenter;
+        }}
 
-        // 부채비율 수치 레이블: 막대 하단 아래
+        // 부채비율 막대 그리기
+        drawRoundedBar(debtCX, debtW, barTop, barBot, 'rgba(224,112,16,0.85)');
+
+        // 부채비율 레이블: 막대 하단 아래
         ctx.font="bold 10px 'Malgun Gothic',sans-serif";
         ctx.textAlign='center';
         ctx.fillStyle='#8a3d00';
-        ctx.fillText(rawVal.toFixed(1)+'%', xCenter, barBot + 13);
+        ctx.fillText(rawVal.toFixed(1)+'%', debtCX, barBot + 13);
+
+        // 겹치는 경우 → 영업이익 막대도 왼쪽으로 이동해서 다시 그림
+        if(overlap) {{
+          const el     = meta0.data[i];
+          const opBarTop = zeroY;           // 음수 막대는 0선에서 시작
+          const opBarBot = el.y;            // 막대 하단(음수이므로 zeroY 아래)
+          const halfW  = fullBarW / 2 - gap / 2;
+          // 기존 Chart.js 가 그린 막대를 덮어씌우기 위해 배경색으로 지운 후 재드로잉
+          ctx.fillStyle = '#f0faf1'; // 배경과 동일한 색으로 원래 막대 덮기
+          ctx.fillRect(xCenter - fullBarW/2 - 2, opBarTop, fullBarW + 4, opBarBot - opBarTop + 2);
+          // 왼쪽으로 옮긴 새 막대
+          drawRoundedBar(opShiftCX, halfW, opBarTop, opBarBot, '#c0392b');
+        }}
       }});
 
       // ── 영업이익 레이블: 0선 위에 고정 ──────────────────────
-      // 양수: 막대 상단(el.y) 바로 위 / 음수: 0선(zeroY) 바로 위
       ctx.font="bold 10px 'Malgun Gothic',sans-serif";
       ctx.textAlign='center';
       opVals.forEach((val,i)=>{{
         if(val===null)return;
-        const el=meta0.data[i];
-        // 항상 0선보다 위쪽에 표시
-        const tipY  = val >= 0 ? el.y : zeroY;   // 양수: 막대 끝, 음수: 0선
-        const labelY = tipY - 6;
-        ctx.fillStyle=val<0?'#8a1a10':'#1a5c30';
-        ctx.fillText(val.toLocaleString(), el.x, labelY);
+        const el      = meta0.data[i];
+        const opVal   = val;
+        const rawDebt = debtValsRaw[i];
+        const overlap = (opVal < 0 && rawDebt !== null);
+        const xCenter = xScale.getPixelForValue(i);
+        const gap     = 2;
+        // 겹칠 때 레이블도 왼쪽 막대 중앙에 맞춤
+        const labelX  = overlap ? xCenter - fullBarW/4 - gap/2 : el.x;
+        const tipY    = val >= 0 ? el.y : zeroY;
+        const labelY  = tipY - 6;
+        ctx.fillStyle = val < 0 ? '#8a1a10' : '#1a5c30';
+        ctx.fillText(val.toLocaleString(), labelX, labelY);
       }});
 
       // ── 분기 라벨 (X축 대신) ─────────────────────────────────
