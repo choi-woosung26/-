@@ -13,13 +13,9 @@ st.set_page_config(page_title="주식 스캐너 EMA", page_icon="📊", layout="
  
 st.title("📊 한국 주식 종목 검색기 — EMA 밴드 스캐너")
  
-# ── 세션 상태 초기화 ─────────────────────────────────────────────
- 
-# MA 순서 (드래그&드롭으로 변경) — 기본값
 if 'ma_order' not in st.session_state:
     st.session_state.ma_order = ['ema_mid', 'sma_short', 'sma_mid', 'sma_long']
  
-# 각 MA의 종가 방향: 'above'(MA < 종가), 'below'(MA > 종가), None
 if 'close_dir' not in st.session_state:
     st.session_state.close_dir = {
         'ema_mid':   None,
@@ -28,7 +24,6 @@ if 'close_dir' not in st.session_state:
         'sma_long':  None,
     }
  
-# MA 파라미터 기본값
 if 'ma_params' not in st.session_state:
     st.session_state.ma_params = {
         'ema_mid':   48,
@@ -79,45 +74,47 @@ st.sidebar.divider()
 st.sidebar.markdown("**📐 이동평균 파라미터**")
 st.sidebar.caption("버튼 클릭으로 종가 조건 설정 (재클릭 시 해제)")
  
-# ── 각 MA 파라미터 + 종가 방향 버튼 ────────────────────────────
 NUMS = ['①', '②', '③', '④']
  
 for key in ['ema_mid', 'sma_short', 'sma_mid', 'sma_long']:
-    label    = MA_LABELS[key]
     ma_type  = MA_TYPES[key]
     order_idx = st.session_state.ma_order.index(key)
     num_icon  = NUMS[order_idx]
+    period_val = st.session_state.ma_params[key]
+    # ★ 라벨: "② EMA" 형식 (중기/단기 등 한글 제거)
+    display_label = f"{num_icon} {ma_type}"
  
     st.sidebar.markdown(
         f"<div style='font-size:12px;font-weight:700;color:#1e6f3e;margin-top:10px'>"
-        f"{num_icon} {label}</div>",
+        f"{display_label}</div>",
         unsafe_allow_html=True
     )
  
     val = st.sidebar.number_input(
         f"{ma_type} 기간",
-        value=st.session_state.ma_params[key],
+        value=period_val,
         min_value=1,
         key=f"num_{key}",
         label_visibility="collapsed"
     )
     st.session_state.ma_params[key] = val
  
-    # 종가 방향 — 라디오 방식 (하나만 활성, 재클릭 해제)
     cur_dir = st.session_state.close_dir[key]
+    ma_name = f"{ma_type}{val}"
  
     c1, c2 = st.sidebar.columns(2)
     with c1:
-        # 활성이면 이모지로 표시
         active_above = cur_dir == 'above'
-        btn_label_above = f"{'🟢' if active_above else '⬜'} < 종가"
+        # ★ LINE < 종가
+        btn_label_above = f"{'🟢' if active_above else '⬜'} {ma_name}<종가"
         if st.button(btn_label_above, key=f"btn_above_{key}", use_container_width=True):
             st.session_state.close_dir[key] = None if active_above else 'above'
             st.rerun()
  
     with c2:
         active_below = cur_dir == 'below'
-        btn_label_below = f"{'🔴' if active_below else '⬜'} 종가 >"
+        # ★ LINE > 종가  →  종가<LINE
+        btn_label_below = f"{'🔴' if active_below else '⬜'} 종가<{ma_name}"
         if st.button(btn_label_below, key=f"btn_below_{key}", use_container_width=True):
             st.session_state.close_dir[key] = None if active_below else 'below'
             st.rerun()
@@ -168,7 +165,7 @@ for key in order:
     if d == 'above':
         close_parts.append(f"{name} < 종가")
     elif d == 'below':
-        close_parts.append(f"{name} > 종가")
+        close_parts.append(f"종가 < {name}")
 st.sidebar.caption("종가: " + (" · ".join(close_parts) if close_parts else "조건 없음"))
  
  
@@ -347,8 +344,9 @@ let currentOrder = {json.dumps(order_data)};
 function dirClass(dir) {{
   return dir === 'above' ? 'dir-above' : dir === 'below' ? 'dir-below' : 'dir-none';
 }}
-function dirText(dir) {{
-  return dir === 'above' ? '< 종가 (위)' : dir === 'below' ? '종가 > (아래)' : '종가 조건 없음';
+// ★ LINE < 종가 / 종가 < LINE 표기
+function dirText(dir, name) {{
+  return dir === 'above' ? name + ' < 종가' : dir === 'below' ? '종가 < ' + name : '종가 조건 없음';
 }}
  
 function renderCards() {{
@@ -356,7 +354,6 @@ function renderCards() {{
   row.innerHTML = '';
  
   currentOrder.forEach((item, idx) => {{
-    // Arrow before card (except first)
     if (idx > 0) {{
       const arrow = document.createElement('div');
       arrow.className = 'arrow-sep';
@@ -377,7 +374,7 @@ function renderCards() {{
       <div class="card-type-badge">${{item.type}}</div>
       <div class="card-name">${{item.name}}</div>
       <div class="card-label">${{item.label}}</div>
-      <div class="card-dir ${{dirClass(item.dir)}}">${{dirText(item.dir)}}</div>
+      <div class="card-dir ${{dirClass(item.dir)}}">${{dirText(item.dir, item.name)}}</div>
     `;
  
     card.addEventListener('dragstart', e => {{
@@ -422,8 +419,6 @@ function applyOrder() {{
   const msg     = document.getElementById('status-msg');
   const btn     = document.getElementById('apply-btn');
  
-  // URL에 query param으로 전달 (Streamlit experimental_set_query_params 대체)
-  // Streamlit Component Value 방식
   window.parent.postMessage({{
     isStreamlitMessage: true,
     type: 'streamlit:setComponentValue',
@@ -464,7 +459,7 @@ for key in order:
     if d == 'above':
         close_cond_parts.append(f"**{name} < 종가**")
     elif d == 'below':
-        close_cond_parts.append(f"**{name} > 종가**")
+        close_cond_parts.append(f"**종가 < {name}**")
  
 st.markdown(f"""
 **검색 조건 (일봉 기준)**
@@ -596,13 +591,38 @@ def get_financial_history(code_6: str):
                         ratio = ratio.tail(6)
                         ratio.index = [d.strftime('%Y.%m') for d in ratio.index]
                         debt_series = ratio
- 
+
             if not op_series.empty or not debt_series.empty:
                 return op_series, debt_series
         except Exception:
             continue
  
     return pd.Series(dtype=float), pd.Series(dtype=float)
+
+
+# ── 업종 정보 ────────────────────────────────────────────────────
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_sector_info(code_6: str):
+    """yfinance로 업종/산업 정보 조회"""
+    for suffix in ['.KS', '.KQ']:
+        ticker_str = f"{code_6}{suffix}"
+        try:
+            tk = yf.Ticker(ticker_str)
+            info = tk.info
+            sector   = info.get('sector', None)
+            industry = info.get('industry', None)
+            employees = info.get('fullTimeEmployees', None)
+            summary  = info.get('longBusinessSummary', None)
+            if sector or industry:
+                return {
+                    'sector':    sector or '-',
+                    'industry':  industry or '-',
+                    'employees': employees,
+                    'summary':   summary,
+                }
+        except Exception:
+            continue
+    return None
  
  
 # ── 재무 그래프 ──────────────────────────────────────────────────
@@ -616,7 +636,10 @@ def render_financial_chart(name: str, code: str, op_series: pd.Series, debt_seri
     all_idx   = sorted(set(op_series.index if has_op else []) | set(debt_series.index if has_debt else []))
     quarters  = all_idx
     op_vals   = [round(float(op_series[q]),   1) if (has_op   and q in op_series.index)   else None for q in quarters]
-    debt_vals = [round(float(debt_series[q]), 1) if (has_debt and q in debt_series.index) else None for q in quarters]
+    # ★ 부채비율: 양수면 음수로 변환 (0선 아래로 내려감, 커질수록 더 아래)
+    debt_vals_raw = [round(float(debt_series[q]), 1) if (has_debt and q in debt_series.index) else None for q in quarters]
+    debt_vals = [(-abs(v) if v is not None else None) for v in debt_vals_raw]
+
     op_colors = ['#c0392b' if (v is not None and v < 0) else '#3a9e5f' for v in op_vals]
     chart_id  = f"chart_{code}"
  
@@ -632,40 +655,78 @@ def render_financial_chart(name: str, code: str, op_series: pd.Series, debt_seri
   </div>
   <div style="position:relative;height:320px;"><canvas id="{chart_id}"></canvas></div>
   <div style="display:flex;justify-content:center;gap:24px;margin-top:12px;font-size:12px;color:#444;">
-    <span><span style="width:14px;height:11px;background:#3a9e5f;border-radius:2px;display:inline-block;margin-right:5px;"></span>영업이익 (억원)</span>
+    <span><span style="width:14px;height:11px;background:#3a9e5f;border-radius:2px;display:inline-block;margin-right:5px;"></span>영업이익 (+억원)</span>
+    <span><span style="width:14px;height:11px;background:#c0392b;border-radius:2px;display:inline-block;margin-right:5px;"></span>영업이익 (-억원)</span>
     <span><span style="width:14px;height:11px;background:#e07010;border-radius:2px;display:inline-block;margin-right:5px;"></span>부채비율 (%)</span>
   </div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script>
 (function() {{
-  const quarters={json.dumps(quarters)},opVals={json.dumps(op_vals)},debtVals={json.dumps(debt_vals)},opColors={json.dumps(op_colors)};
+  const quarters={json.dumps(quarters)};
+  const opVals={json.dumps(op_vals)};
+  const debtVals={json.dumps(debt_vals)};
+  const debtValsRaw={json.dumps(debt_vals_raw)};
+  const opColors={json.dumps(op_colors)};
   const ctx=document.getElementById('{chart_id}');
   if(!ctx)return;
   new Chart(ctx,{{
     data:{{labels:quarters,datasets:[
       {{type:'bar',label:'영업이익',data:opVals,backgroundColor:opColors,borderRadius:4,borderSkipped:false,borderWidth:0,yAxisID:'yLeft',order:1}},
-      {{type:'bar',label:'부채비율',data:debtVals,backgroundColor:'#e07010',borderRadius:4,borderSkipped:'bottom',borderWidth:0,yAxisID:'yRight',order:2}}
+      {{type:'bar',label:'부채비율',data:debtVals,backgroundColor:'#e07010',borderRadius:4,borderSkipped:'top',borderWidth:0,yAxisID:'yRight',order:2}}
     ]}},
     options:{{responsive:true,maintainAspectRatio:false,
       plugins:{{legend:{{display:false}},tooltip:{{mode:'index',intersect:false,
-        callbacks:{{label:c=>c.datasetIndex===0?'영업이익: '+(c.raw!==null?c.raw.toLocaleString()+'억원':'-'):'부채비율: '+(c.raw!==null?c.raw.toFixed(1)+'%':'-')}}}}}},
+        callbacks:{{label:function(c){{
+          if(c.datasetIndex===0) return '영업이익: '+(c.raw!==null?c.raw.toLocaleString()+'억원':'-');
+          // 부채비율: 실제 양수값 표시
+          const rawIdx=c.dataIndex;
+          const rawVal=debtValsRaw[rawIdx];
+          return '부채비율: '+(rawVal!==null?rawVal.toFixed(1)+'%':'-');
+        }}}}}}
+      }},
       scales:{{
         x:{{grid:{{display:false}},ticks:{{color:'#fff',font:{{size:11,weight:'600'}},maxRotation:0,autoSkip:false,padding:4}},border:{{display:false}}}},
         yLeft:{{type:'linear',position:'left',ticks:{{color:'#2d7a4a',font:{{size:11}},callback:v=>v.toLocaleString()}},grid:{{color:c=>c.tick.value===0?'#000':'rgba(180,200,180,0.35)',lineWidth:c=>c.tick.value===0?2:1}},border:{{display:false}}}},
-        yRight:{{type:'linear',position:'right',min:0,ticks:{{color:'#b05010',font:{{size:11}},callback:v=>v+'%'}},grid:{{display:false}},border:{{display:false}}}}
-      }},layout:{{padding:{{top:24,bottom:0}}}}
+        yRight:{{type:'linear',position:'right',max:0,ticks:{{color:'#b05010',font:{{size:11}},callback:v=>(-v).toFixed(0)+'%'}},grid:{{display:false}},border:{{display:false}}}}
+      }},layout:{{padding:{{top:28,bottom:0}}}}
     }},
     plugins:[{{id:'cd_{code}',afterDatasetsDraw(chart){{
-      const ctx=chart.ctx,meta0=chart.getDatasetMeta(0),meta1=chart.getDatasetMeta(1),yLeft=chart.scales.yLeft;
+      const ctx=chart.ctx;
+      const meta0=chart.getDatasetMeta(0);
+      const meta1=chart.getDatasetMeta(1);
+      const yLeft=chart.scales.yLeft;
       ctx.save();
       const zeroY=yLeft.getPixelForValue(0);
+      // 0선 (영업이익 기준)
       ctx.beginPath();ctx.moveTo(chart.chartArea.left,zeroY);ctx.lineTo(chart.chartArea.right,zeroY);ctx.strokeStyle='#000';ctx.lineWidth=2;ctx.stroke();
+      // 좌우 테두리
       ctx.beginPath();ctx.moveTo(chart.chartArea.left,chart.chartArea.top);ctx.lineTo(chart.chartArea.left,chart.chartArea.bottom);ctx.strokeStyle='#000';ctx.lineWidth=1.5;ctx.stroke();
       ctx.beginPath();ctx.moveTo(chart.chartArea.right,chart.chartArea.top);ctx.lineTo(chart.chartArea.right,chart.chartArea.bottom);ctx.strokeStyle='#000';ctx.lineWidth=1.5;ctx.stroke();
-      ctx.font="bold 10px 'Malgun Gothic',sans-serif";ctx.textAlign='center';
-      opVals.forEach((val,i)=>{{if(val===null)return;const el=meta0.data[i];ctx.fillStyle=val<0?'#8a1a10':'#1a5c30';ctx.fillText(val.toLocaleString(),el.x,val<0?el.y+14:el.y-7);}});
-      debtVals.forEach((val,i)=>{{if(val===null)return;const el=meta1.data[i];ctx.fillStyle='#8a3d00';ctx.fillText(val.toFixed(1)+'%',el.x,el.y-7);}});
+
+      // ★ 영업이익 레이블: 항상 막대 위쪽에 표시
+      ctx.font="bold 10px 'Malgun Gothic',sans-serif";
+      ctx.textAlign='center';
+      opVals.forEach((val,i)=>{{
+        if(val===null)return;
+        const el=meta0.data[i];
+        // 양수: 막대 상단(el.y) 위쪽 / 음수: 막대 상단(el.y, 0선 위)가 아닌 실제 막대 위쪽(el.y)
+        // el.y는 막대의 값 끝 좌표 — 양수면 0선 위(y 작음), 음수면 0선 아래(y 큼)
+        const labelY = el.y - 6; // 항상 막대 끝에서 위쪽
+        ctx.fillStyle=val<0?'#8a1a10':'#1a5c30';
+        ctx.fillText(val.toLocaleString(), el.x, labelY);
+      }});
+
+      // ★ 부채비율 레이블: 막대 하단(막대 끝) 아래쪽에 표시 (막대가 0선 아래로 뻗으므로)
+      debtVals.forEach((val,i)=>{{
+        if(val===null)return;
+        const rawVal=debtValsRaw[i];
+        const el=meta1.data[i];
+        ctx.fillStyle='#8a3d00';
+        ctx.fillText(rawVal.toFixed(1)+'%', el.x, el.y + 13);
+      }});
+
+      // 분기 라벨 (X축 대신)
       const xScale=chart.scales.x,yBottom=chart.chartArea.bottom;
       ctx.fillStyle='#555';ctx.fillRect(chart.chartArea.left,yBottom,chart.chartArea.width,28);
       ctx.font="bold 11px 'Malgun Gothic',sans-serif";ctx.fillStyle='#fff';
@@ -738,7 +799,6 @@ def check_ema_conditions(code_6, ma_order, ma_params, close_dir):
             close      = df['Close']
             curr_close = float(close.iloc[-1])
  
-            # MA 계산
             ma_vals = {}
             for key in ma_order:
                 period = ma_params[key]
@@ -747,19 +807,17 @@ def check_ema_conditions(code_6, ma_order, ma_params, close_dir):
                 else:
                     ma_vals[key] = float(close.rolling(period).mean().iloc[-1])
  
-            # 배열 조건 (순서대로 <)
             cond_order = all(
                 ma_vals[ma_order[i]] < ma_vals[ma_order[i+1]]
                 for i in range(len(ma_order) - 1)
             )
  
-            # 종가 조건 (각 MA 독립적으로, 하나만 선택)
             cond_close = True
             for key in ma_order:
                 d = close_dir[key]
-                if d == 'above':    # MA < 종가
+                if d == 'above':
                     cond_close = cond_close and (ma_vals[key] < curr_close)
-                elif d == 'below':  # MA > 종가
+                elif d == 'below':
                     cond_close = cond_close and (ma_vals[key] > curr_close)
  
             return cond_order and cond_close, curr_close, ma_vals
@@ -937,6 +995,29 @@ if st.button("🔍 종목 검색 시작", use_container_width=True):
                                 }, na_rep="-"),
                                 use_container_width=True, hide_index=True
                             )
+
+                            # ── 업종 정보 ──────────────────────────────────────
+                            st.markdown("---")
+                            st.markdown("**🏭 업종 정보**")
+                            with st.spinner("업종 정보 조회 중..."):
+                                sector_info = get_sector_info(code)
+                            if sector_info:
+                                col_s1, col_s2, col_s3 = st.columns(3)
+                                with col_s1:
+                                    st.markdown(f"**섹터**  \n{sector_info['sector']}")
+                                with col_s2:
+                                    st.markdown(f"**업종**  \n{sector_info['industry']}")
+                                with col_s3:
+                                    emp = sector_info['employees']
+                                    st.markdown(f"**임직원 수**  \n{f'{emp:,}명' if emp else '-'}")
+                                if sector_info.get('summary'):
+                                    summary_text = sector_info['summary']
+                                    # 너무 길면 앞부분만 표시
+                                    if len(summary_text) > 300:
+                                        summary_text = summary_text[:300] + "..."
+                                    st.caption(summary_text)
+                            else:
+                                st.caption("업종 정보를 가져올 수 없습니다.")
  
 st.divider()
 st.caption("본 프로그램은 TradingView·KRX·Yahoo Finance 공개 데이터를 활용하며 투자 권유를 목적으로 하지 않습니다.")
