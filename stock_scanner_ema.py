@@ -1224,4 +1224,3 @@ if st.button("🔍 종목 검색 시작", use_container_width=True):
  
 st.divider()
 st.caption("본 프로그램은 TradingView·KRX·Yahoo Finance 공개 데이터를 활용하며 투자 권유를 목적으로 하지 않습니다.")
-
