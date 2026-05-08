@@ -9,16 +9,21 @@ import json
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
  
-st.set_page_config(page_title="주식 스캐너 EMA", page_icon="📊", layout="wide")
+st.set_page_config(page_title="주식 스캐너 SMA", page_icon="📊", layout="wide")
  
-st.title("📊 한국 주식 종목 검색기 — EMA 밴드 스캐너")
+# ★ 타이틀 글자 2포인트 작게
+st.markdown(
+    "<h1 style='font-size:28px;'>📊 한국 주식 종목 검색기 — SMA 밴드 스캐너</h1>",
+    unsafe_allow_html=True
+)
  
+# ★ EMA → SMA112로 변경, 순서도 sma112 기준으로 재정렬
 if 'ma_order' not in st.session_state:
-    st.session_state.ma_order = ['ema_mid', 'sma_short', 'sma_mid', 'sma_long']
+    st.session_state.ma_order = ['sma112', 'sma_short', 'sma_mid', 'sma_long']
  
 if 'close_dir' not in st.session_state:
     st.session_state.close_dir = {
-        'ema_mid':   None,
+        'sma112':    None,
         'sma_short': None,
         'sma_mid':   None,
         'sma_long':  None,
@@ -26,21 +31,21 @@ if 'close_dir' not in st.session_state:
  
 if 'ma_params' not in st.session_state:
     st.session_state.ma_params = {
-        'ema_mid':   48,
+        'sma112':    112,
         'sma_short': 60,
         'sma_mid':   224,
         'sma_long':  448,
     }
  
 MA_LABELS = {
-    'ema_mid':   '중기 EMA',
+    'sma112':    'SMA112',
     'sma_short': '단기 SMA',
     'sma_mid':   '중기 SMA',
     'sma_long':  '장기 SMA',
 }
  
 MA_TYPES = {
-    'ema_mid':   'EMA',
+    'sma112':    'SMA',
     'sma_short': 'SMA',
     'sma_mid':   'SMA',
     'sma_long':  'SMA',
@@ -76,12 +81,12 @@ st.sidebar.caption("버튼 클릭으로 종가 조건 설정 (재클릭 시 해�
  
 NUMS = ['①', '②', '③', '④']
  
-for key in ['ema_mid', 'sma_short', 'sma_mid', 'sma_long']:
+# ★ 순서: sma112, sma_short(60), sma_mid(224), sma_long(448)
+for key in ['sma112', 'sma_short', 'sma_mid', 'sma_long']:
     ma_type  = MA_TYPES[key]
     order_idx = st.session_state.ma_order.index(key)
     num_icon  = NUMS[order_idx]
     period_val = st.session_state.ma_params[key]
-    # ★ 라벨: "② EMA" 형식 (중기/단기 등 한글 제거)
     display_label = f"{num_icon} {ma_type}"
  
     st.sidebar.markdown(
@@ -105,7 +110,6 @@ for key in ['ema_mid', 'sma_short', 'sma_mid', 'sma_long']:
     c1, c2 = st.sidebar.columns(2)
     with c1:
         active_above = cur_dir == 'above'
-        # ★ LINE < 종가
         btn_label_above = f"{'🟢' if active_above else '⬜'} {ma_name}<종가"
         if st.button(btn_label_above, key=f"btn_above_{key}", use_container_width=True):
             st.session_state.close_dir[key] = None if active_above else 'above'
@@ -113,7 +117,6 @@ for key in ['ema_mid', 'sma_short', 'sma_mid', 'sma_long']:
  
     with c2:
         active_below = cur_dir == 'below'
-        # ★ LINE > 종가  →  종가<LINE
         btn_label_below = f"{'🔴' if active_below else '⬜'} 종가<{ma_name}"
         if st.button(btn_label_below, key=f"btn_below_{key}", use_container_width=True):
             st.session_state.close_dir[key] = None if active_below else 'below'
@@ -344,7 +347,6 @@ let currentOrder = {json.dumps(order_data)};
 function dirClass(dir) {{
   return dir === 'above' ? 'dir-above' : dir === 'below' ? 'dir-below' : 'dir-none';
 }}
-// ★ LINE < 종가 / 종가 < LINE 표기
 function dirText(dir, name) {{
   return dir === 'above' ? name + ' < 종가' : dir === 'below' ? '종가 < ' + name : '종가 조건 없음';
 }}
@@ -603,7 +605,6 @@ def get_financial_history(code_6: str):
 # ── 업종 정보 ────────────────────────────────────────────────────
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_sector_info(code_6: str):
-    """yfinance로 업종/산업 정보 조회"""
     for suffix in ['.KS', '.KQ']:
         ticker_str = f"{code_6}{suffix}"
         try:
@@ -636,7 +637,6 @@ def render_financial_chart(name: str, code: str, op_series: pd.Series, debt_seri
     all_idx   = sorted(set(op_series.index if has_op else []) | set(debt_series.index if has_debt else []))
     quarters  = all_idx
     op_vals   = [round(float(op_series[q]),   1) if (has_op   and q in op_series.index)   else None for q in quarters]
-    # 부채비율: canvas 직접 드로잉이므로 원본 양수값만 사용
     debt_vals_raw = [round(float(debt_series[q]), 1) if (has_debt and q in debt_series.index) else None for q in quarters]
 
     chart_id  = f"chart_{code}"
@@ -648,11 +648,28 @@ def render_financial_chart(name: str, code: str, op_series: pd.Series, debt_seri
     <div style="width:13px;height:13px;background:#2d6a3f;border-radius:2px;"></div>
     <span style="font-size:15px;font-weight:700;color:#1a3a24;">{name} ({code}) — 분기별 재무 추이</span>
   </div>
-  <div style="display:flex;justify-content:space-between;font-size:11px;font-weight:700;margin-bottom:2px;padding:0 4px;">
-    <span style="color:#2d7a4a;">억원</span><span style="color:#b05010;">%</span>
+
+  <!-- ★ 억원 / 분기별 범례 / % 를 가로로 배치, 범례를 가운데에 -->
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;
+              font-size:11px;font-weight:700;margin-bottom:4px;padding:0 4px;">
+    <span style="color:#2d7a4a;line-height:1.6;">억원</span>
+
+    <!-- 가운데: 분기별 범례 -->
+    <div style="text-align:center;line-height:1.8;font-size:11px;font-weight:600;color:#444;">
+      <div style="font-weight:700;color:#333;">분기별</div>
+      <div><span style="display:inline-block;width:10px;height:10px;
+                        background:#3a9e5f;border-radius:2px;margin-right:4px;vertical-align:middle;"></span>영업이익</div>
+      <div><span style="display:inline-block;width:10px;height:10px;
+                        background:#e07010;border-radius:2px;margin-right:4px;vertical-align:middle;"></span>부채비율</div>
+    </div>
+
+    <span style="color:#b05010;line-height:1.6;">%</span>
   </div>
+
   <div style="position:relative;height:320px;"><canvas id="{chart_id}"></canvas></div>
-  <div style="display:flex;justify-content:center;gap:24px;margin-top:12px;font-size:12px;color:#444;">
+
+  <!-- 하단 범례 (기존 유지, 음수 영업이익 안내 추가) -->
+  <div style="display:flex;justify-content:center;gap:24px;margin-top:12px;font-size:12px;color:#444;flex-wrap:wrap;">
     <span><span style="width:14px;height:11px;background:#3a9e5f;border-radius:2px;display:inline-block;margin-right:5px;"></span>영업이익 (+억원)</span>
     <span><span style="width:14px;height:11px;background:#c0392b;border-radius:2px;display:inline-block;margin-right:5px;"></span>영업이익 (-억원)</span>
     <span><span style="width:14px;height:11px;background:#e07010;border-radius:2px;display:inline-block;margin-right:5px;"></span>부채비율 (%)</span>
@@ -669,8 +686,6 @@ def render_financial_chart(name: str, code: str, op_series: pd.Series, debt_seri
   new Chart(ctx,{{
     data:{{
       labels:quarters,
-      // 영업이익·부채비율 모두 plugin에서 직접 그리므로
-      // Chart.js 에는 yLeft 스케일 계산용 더미 데이터셋만 등록
       datasets:[{{
         type:'bar',
         data:opVals,
@@ -686,7 +701,12 @@ def render_financial_chart(name: str, code: str, op_series: pd.Series, debt_seri
         legend:{{display:false}},
         tooltip:{{
           mode:'index',intersect:false,
+          // ★ 스마트폰 터치 대응: position을 'nearest'로, 툴팁을 항상 차트 안에 표시
+          position:'nearest',
           callbacks:{{
+            title:function(items){{
+              return items.length>0 ? quarters[items[0].dataIndex] : '';
+            }},
             label:function(c){{
               const i=c.dataIndex;
               const lines=[];
@@ -694,7 +714,17 @@ def render_financial_chart(name: str, code: str, op_series: pd.Series, debt_seri
               if(debtValsRaw[i]!==null) lines.push('부채비율: '+debtValsRaw[i].toFixed(1)+'%');
               return lines;
             }}
-          }}
+          }},
+          // ★ 툴팁이 차트 영역 밖으로 나가지 않도록
+          xAlign:'center',
+          yAlign:'bottom',
+          caretSize:6,
+          padding:10,
+          bodyFont:{{size:13}},
+          titleFont:{{size:13,weight:'bold'}},
+          backgroundColor:'rgba(20,50,30,0.92)',
+          borderColor:'#3a9e5f',
+          borderWidth:1,
         }}
       }},
       scales:{{
@@ -713,41 +743,38 @@ def render_financial_chart(name: str, code: str, op_series: pd.Series, debt_seri
           border:{{display:false}}
         }}
       }},
-      layout:{{padding:{{top:28,bottom:0}}}}
+      layout:{{padding:{{top:28,bottom:0}}}},
+      // ★ 스마트폰 터치 이벤트 대응
+      interaction:{{
+        mode:'index',
+        intersect:false,
+      }},
     }},
     plugins:[{{
       id:'cd_{code}',
-      // beforeDatasetsDraw 에서 모든 막대를 직접 그려
-      // Chart.js 의 투명 더미 막대보다 먼저(뒤 레이어) 배치
       afterDraw(chart){{
         const ctx=chart.ctx;
         const xScale=chart.scales.x;
         const yLeft=chart.scales.yLeft;
         ctx.save();
 
-        // ── 스케일 계산 ────────────────────────────────────────
         const zeroY   = yLeft.getPixelForValue(0);
         const chartH  = chart.chartArea.bottom - chart.chartArea.top;
         const maxDebt = Math.max(...debtValsRaw.filter(v=>v!==null), 1);
-        const debtPPU = (chartH * 0.38) / maxDebt; // 부채비율 픽셀/단위
+        const debtPPU = (chartH * 0.38) / maxDebt;
 
-        // 더미 막대에서 실제 폭 읽기
         const dummyMeta = chart.getDatasetMeta(0);
         const fullBarW  = dummyMeta.data.length > 0 ? dummyMeta.data[0].width : 24;
         const gap = 2;
 
-        // ── 둥근 하단 막대 헬퍼 ────────────────────────────────
         function drawBar(cx, w, top, bot, color) {{
           const h = Math.abs(bot - top);
           if(h < 1) return;
           const r = Math.min(4, h / 2);
-          // top < bot : 아래로 뻗는 막대 (음수영업이익·부채비율)
-          // top > bot : 위로 뻗는 막대 (양수영업이익)
           const yTop = Math.min(top, bot);
           const yBot = Math.max(top, bot);
           ctx.beginPath();
           if(top > bot) {{
-            // 위로 뻗음 → 위쪽 모서리 둥글게
             ctx.moveTo(cx - w/2, yBot);
             ctx.lineTo(cx + w/2, yBot);
             ctx.lineTo(cx + w/2, yTop + r);
@@ -756,7 +783,6 @@ def render_financial_chart(name: str, code: str, op_series: pd.Series, debt_seri
             ctx.quadraticCurveTo(cx - w/2, yTop, cx - w/2, yTop + r);
             ctx.lineTo(cx - w/2, yBot);
           }} else {{
-            // 아래로 뻗음 → 아래쪽 모서리 둥글게
             ctx.moveTo(cx - w/2, yTop);
             ctx.lineTo(cx + w/2, yTop);
             ctx.lineTo(cx + w/2, yBot - r);
@@ -770,22 +796,18 @@ def render_financial_chart(name: str, code: str, op_series: pd.Series, debt_seri
           ctx.fill();
         }}
 
-        // ── 막대 그리기 ────────────────────────────────────────
         quarters.forEach((q, i) => {{
           const opVal  = opVals[i];
           const dbtVal = debtValsRaw[i];
           const xC     = xScale.getPixelForValue(i);
 
-          // 겹침 조건: 영업이익 음수 + 부채비율 존재
           const overlap = (opVal !== null && opVal < 0 && dbtVal !== null);
 
-          // 막대 폭·중심 결정
           const opW    = overlap ? fullBarW/2 - gap/2 : fullBarW * 0.72;
           const dbtW   = overlap ? fullBarW/2 - gap/2 : fullBarW * 0.72;
-          const opCX   = overlap ? xC - fullBarW/4 - gap/2 : xC;  // 왼쪽(음수영업이익)
-          const dbtCX  = overlap ? xC + fullBarW/4 + gap/2 : xC;  // 오른쪽(부채비율)
+          const opCX   = overlap ? xC - fullBarW/4 - gap/2 : xC;
+          const dbtCX  = overlap ? xC + fullBarW/4 + gap/2 : xC;
 
-          // 영업이익 막대
           if(opVal !== null) {{
             const opColor = opVal >= 0 ? '#3a9e5f' : '#c0392b';
             const opTop   = opVal >= 0 ? yLeft.getPixelForValue(opVal) : zeroY;
@@ -793,15 +815,13 @@ def render_financial_chart(name: str, code: str, op_series: pd.Series, debt_seri
             drawBar(opCX, opW, opTop, opBot, opColor);
           }}
 
-          // 부채비율 막대 (0선 아래로)
           if(dbtVal !== null) {{
             const dbtBot = zeroY + dbtVal * debtPPU;
             drawBar(dbtCX, dbtW, zeroY, dbtBot, 'rgba(224,112,16,0.88)');
           }}
         }});
 
-        // ── 수치 레이블 ────────────────────────────────────────
-        ctx.font  = "bold 10px 'Malgun Gothic',sans-serif";
+        // ★ 수치 레이블: 스마트폰 가림 방지를 위해 막대 내부에 표시
         ctx.textAlign = 'center';
 
         quarters.forEach((q, i) => {{
@@ -813,32 +833,48 @@ def render_financial_chart(name: str, code: str, op_series: pd.Series, debt_seri
           const opCX    = overlap ? xC - fullBarW/4 - gap2/2 : xC;
           const dbtCX   = overlap ? xC + fullBarW/4 + gap2/2 : xC;
 
-          // 영업이익 레이블: 항상 0선 위에
+          // 영업이익 레이블: 막대 위쪽 (막대 높이가 충분할 때만)
           if(opVal !== null) {{
-            const tipY   = opVal >= 0 ? yLeft.getPixelForValue(opVal) : zeroY;
-            ctx.fillStyle = opVal < 0 ? '#8a1a10' : '#1a5c30';
-            ctx.fillText(opVal.toLocaleString(), opCX, tipY - 6);
+            const barTop = opVal >= 0 ? yLeft.getPixelForValue(opVal) : zeroY;
+            const barBot = opVal >= 0 ? zeroY : yLeft.getPixelForValue(opVal);
+            const barH   = Math.abs(barBot - barTop);
+            ctx.font = "bold 10px 'Malgun Gothic',sans-serif";
+            if(barH > 22) {{
+              // 막대 안쪽 상단에 표시
+              ctx.fillStyle = opVal >= 0 ? '#ffffff' : '#ffffff';
+              const labelY = opVal >= 0 ? barTop + 14 : barBot - 6;
+              ctx.fillText(opVal.toLocaleString(), opCX, labelY);
+            }} else {{
+              // 막대가 작으면 위/아래 바깥에 표시
+              ctx.fillStyle = opVal < 0 ? '#8a1a10' : '#1a5c30';
+              const labelY = opVal >= 0 ? barTop - 5 : barBot + 13;
+              ctx.fillText(opVal.toLocaleString(), opCX, labelY);
+            }}
           }}
 
-          // 부채비율 레이블: 막대 하단 아래
+          // 부채비율 레이블: 막대 안쪽 하단에 표시
           if(dbtVal !== null) {{
             const dbtBot = zeroY + dbtVal * debtPPU;
-            ctx.fillStyle = '#8a3d00';
-            ctx.fillText(dbtVal.toFixed(1)+'%', dbtCX, dbtBot + 13);
+            const barH   = Math.abs(dbtBot - zeroY);
+            ctx.font = "bold 10px 'Malgun Gothic',sans-serif";
+            if(barH > 22) {{
+              ctx.fillStyle = '#ffffff';
+              ctx.fillText(dbtVal.toFixed(1)+'%', dbtCX, dbtBot - 5);
+            }} else {{
+              ctx.fillStyle = '#8a3d00';
+              ctx.fillText(dbtVal.toFixed(1)+'%', dbtCX, dbtBot + 13);
+            }}
           }}
         }});
 
-        // ── 0선 ────────────────────────────────────────────────
         ctx.beginPath();ctx.moveTo(chart.chartArea.left,zeroY);ctx.lineTo(chart.chartArea.right,zeroY);
         ctx.strokeStyle='rgba(0,0,0,0.75)';ctx.lineWidth=2;ctx.stroke();
 
-        // ── 좌우 테두리 ────────────────────────────────────────
         ctx.beginPath();ctx.moveTo(chart.chartArea.left,chart.chartArea.top);ctx.lineTo(chart.chartArea.left,chart.chartArea.bottom);
         ctx.strokeStyle='rgba(0,0,0,0.5)';ctx.lineWidth=1.5;ctx.stroke();
         ctx.beginPath();ctx.moveTo(chart.chartArea.right,chart.chartArea.top);ctx.lineTo(chart.chartArea.right,chart.chartArea.bottom);
         ctx.strokeStyle='rgba(0,0,0,0.5)';ctx.lineWidth=1.5;ctx.stroke();
 
-        // ── 분기 라벨 (X축 대신) ───────────────────────────────
         const yBottom=chart.chartArea.bottom;
         ctx.fillStyle='#555';
         ctx.fillRect(chart.chartArea.left,yBottom,chart.chartArea.width,28);
@@ -888,7 +924,7 @@ def apply_price_volume_filter(data, min_price, max_price, min_vol):
     return data[mask].copy()
  
  
-# ── EMA/SMA 조건 검증 ────────────────────────────────────────────
+# ── SMA 조건 검증 (EMA→SMA로 변경) ────────────────────────────────
 def check_ema_conditions(code_6, ma_order, ma_params, close_dir):
     sma_keys   = [k for k in ma_order if MA_TYPES[k] == 'SMA']
     max_period = max(ma_params[k] for k in sma_keys) if sma_keys else 60
@@ -918,10 +954,8 @@ def check_ema_conditions(code_6, ma_order, ma_params, close_dir):
             ma_vals = {}
             for key in ma_order:
                 period = ma_params[key]
-                if MA_TYPES[key] == 'EMA':
-                    ma_vals[key] = float(close.ewm(span=period, adjust=False).mean().iloc[-1])
-                else:
-                    ma_vals[key] = float(close.rolling(period).mean().iloc[-1])
+                # ★ 모두 SMA로 계산
+                ma_vals[key] = float(close.rolling(period).mean().iloc[-1])
  
             cond_order = all(
                 ma_vals[ma_order[i]] < ma_vals[ma_order[i+1]]
@@ -1056,13 +1090,8 @@ if st.button("🔍 종목 검색 시작", use_container_width=True):
                 for c in ma_cols:
                     fmt[c] = '{:,.0f}'
                 st.dataframe(display.style.format(fmt, na_rep="-"), use_container_width=True, hide_index=True)
- 
-                st.subheader("📊 트레이딩뷰 차트 바로가기")
-                cols_ui = st.columns(5)
-                for i, row in enumerate(results):
-                    with cols_ui[i % 5]:
-                        st.link_button(f"📈 {row['종목명']}", get_chart_url(row['name_raw']), use_container_width=True)
- 
+
+                # ★ 순서 변경: 재무 추이 먼저, 트레이딩뷰 차트 바로가기는 아래로
                 st.divider()
                 st.subheader("📉 종목별 분기 재무 추이 (영업이익 · 부채비율)")
                 st.caption("yfinance 분기별 재무제표 기준 | 영업이익: 억 원 | 부채비율 = 총부채 ÷ 자기자본 × 100")
@@ -1112,7 +1141,6 @@ if st.button("🔍 종목 검색 시작", use_container_width=True):
                                 use_container_width=True, hide_index=True
                             )
 
-                            # ── 업종 정보 ──────────────────────────────────────
                             st.markdown("---")
                             st.markdown("**🏭 업종 정보**")
                             with st.spinner("업종 정보 조회 중..."):
@@ -1128,12 +1156,19 @@ if st.button("🔍 종목 검색 시작", use_container_width=True):
                                     st.markdown(f"**임직원 수**  \n{f'{emp:,}명' if emp else '-'}")
                                 if sector_info.get('summary'):
                                     summary_text = sector_info['summary']
-                                    # 너무 길면 앞부분만 표시
                                     if len(summary_text) > 300:
                                         summary_text = summary_text[:300] + "..."
                                     st.caption(summary_text)
                             else:
                                 st.caption("업종 정보를 가져올 수 없습니다.")
+
+                # ★ 트레이딩뷰 차트 바로가기를 재무 추이 아래로 이동
+                st.divider()
+                st.subheader("📊 트레이딩뷰 차트 바로가기")
+                cols_ui = st.columns(5)
+                for i, row in enumerate(results):
+                    with cols_ui[i % 5]:
+                        st.link_button(f"📈 {row['종목명']}", get_chart_url(row['name_raw']), use_container_width=True)
  
 st.divider()
 st.caption("본 프로그램은 TradingView·KRX·Yahoo Finance 공개 데이터를 활용하며 투자 권유를 목적으로 하지 않습니다.")
