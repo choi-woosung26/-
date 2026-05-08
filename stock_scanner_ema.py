@@ -28,10 +28,10 @@ if ('ma_order' not in st.session_state
 if ('close_dir' not in st.session_state
         or not set(st.session_state.close_dir.keys()).issubset(VALID_KEYS)):
     st.session_state.close_dir = {
-        'sma112':    None,
-        'sma_short': None,
-        'sma_mid':   None,
-        'sma_long':  None,
+        'sma112':    'below',   # 기본: 종가 < SMA112 (종가가 아래)
+        'sma_short': 'above',   # 기본: SMA60 < 종가
+        'sma_mid':   'above',   # 기본: SMA224 < 종가
+        'sma_long':  'above',   # 기본: SMA448 < 종가
     }
 
 if ('ma_params' not in st.session_state
@@ -89,17 +89,16 @@ NUMS = ['①', '②', '③', '④']
  
 # ma_order 순서대로 사이드바 표시 (순서 변경 시 자동 반영)
 for order_idx, key in enumerate(st.session_state.ma_order):
-    ma_type  = MA_TYPES[key]
+    ma_type   = MA_TYPES[key]
     num_icon  = NUMS[order_idx]
     period_val = st.session_state.ma_params[key]
-    display_label = f"{num_icon} {ma_type}"
- 
+
     st.sidebar.markdown(
         f"<div style='font-size:12px;font-weight:700;color:#1e6f3e;margin-top:10px'>"
-        f"{display_label}</div>",
+        f"{num_icon} {ma_type}</div>",
         unsafe_allow_html=True
     )
- 
+
     val = st.sidebar.number_input(
         f"{ma_type} 기간",
         value=period_val,
@@ -108,24 +107,47 @@ for order_idx, key in enumerate(st.session_state.ma_order):
         label_visibility="collapsed"
     )
     st.session_state.ma_params[key] = val
- 
+
     cur_dir = st.session_state.close_dir[key]
     ma_name = f"{ma_type}{val}"
- 
-    c1, c2 = st.sidebar.columns(2)
-    with c1:
-        active_above = cur_dir == 'above'
-        btn_label_above = f"{'🟢' if active_above else '⬜'} {ma_name}<종가"
-        if st.button(btn_label_above, key=f"btn_above_{key}", use_container_width=True):
-            st.session_state.close_dir[key] = None if active_above else 'above'
-            st.rerun()
- 
-    with c2:
+
+    # ── 3열: [종가<SMA] [SMA명(중앙)] [SMA<종가] ──────────────────
+    c_left, c_mid, c_right = st.sidebar.columns([2, 2, 2])
+
+    with c_left:
         active_below = cur_dir == 'below'
-        btn_label_below = f"{'🔴' if active_below else '⬜'} 종가<{ma_name}"
-        if st.button(btn_label_below, key=f"btn_below_{key}", use_container_width=True):
+        lbl = f"{'🔴' if active_below else '⬜'} -종가"
+        if st.button(lbl, key=f"btn_below_{key}", use_container_width=True,
+                     help=f"종가 < {ma_name} 조건 설정"):
             st.session_state.close_dir[key] = None if active_below else 'below'
             st.rerun()
+
+    with c_mid:
+        # 중앙: SMA명 표시 (클릭 시 조건 해제)
+        mid_label = f"**{ma_name}**" if cur_dir is None else ma_name
+        st.markdown(
+            f"<div style='text-align:center;padding:6px 0 2px;"
+            f"font-size:12px;font-weight:700;color:#1a3a24;'>{ma_name}</div>",
+            unsafe_allow_html=True
+        )
+        if cur_dir is not None:
+            if st.button("✖ 해제", key=f"btn_clear_{key}", use_container_width=True):
+                st.session_state.close_dir[key] = None
+                st.rerun()
+
+    with c_right:
+        active_above = cur_dir == 'above'
+        lbl = f"{'🟢' if active_above else '⬜'} +종가"
+        if st.button(lbl, key=f"btn_above_{key}", use_container_width=True,
+                     help=f"{ma_name} < 종가 조건 설정"):
+            st.session_state.close_dir[key] = None if active_above else 'above'
+            st.rerun()
+
+    # 현재 조건 표시
+    if cur_dir == 'below':
+        st.sidebar.caption(f"  ↳ 조건: 종가 < {ma_name}")
+    elif cur_dir == 'above':
+        st.sidebar.caption(f"  ↳ 조건: {ma_name} < 종가")
  
 # ── 사이드바 ↑↓ 순서 변경 ────────────────────────────────────────
 st.sidebar.divider()
@@ -655,30 +677,39 @@ def render_financial_chart(name: str, code: str, op_series: pd.Series, debt_seri
  
     html = f"""
 <div style="background:linear-gradient(160deg,#d4edda 0%,#e8f5e9 40%,#f0faf1 100%);
-            border-radius:12px;padding:24px 28px 20px;font-family:'Malgun Gothic',sans-serif;">
+            border-radius:12px;padding:20px 20px 16px;font-family:'Malgun Gothic',sans-serif;">
   <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
     <div style="width:13px;height:13px;background:#2d6a3f;border-radius:2px;"></div>
-    <span style="font-size:15px;font-weight:700;color:#1a3a24;">{name} ({code}) — 분기별 재무 추이</span>
+    <span style="font-size:14px;font-weight:700;color:#1a3a24;">{name} ({code}) — 분기별 재무 추이</span>
   </div>
 
-  <!-- 억원 / % 좌우 표시 (원위치) -->
+  <!-- 억원 / % 좌우 표시 -->
   <div style="display:flex;justify-content:space-between;
               font-size:11px;font-weight:700;margin-bottom:2px;padding:0 4px;">
     <span style="color:#2d7a4a;">억원</span>
     <span style="color:#b05010;">%</span>
   </div>
 
-  <div style="position:relative;height:300px;"><canvas id="{chart_id}"></canvas></div>
+  <div style="position:relative;height:290px;"><canvas id="{chart_id}"></canvas></div>
 
-  <!-- ★ 하단 범례: 영업이익·부채비율 포함 -->
-  <div style="display:flex;justify-content:center;gap:16px;margin-top:10px;
-              font-size:11px;color:#444;flex-wrap:wrap;line-height:1.8;">
+  <!-- ★ 클릭 정보 패널 (툴팁 대신 차트 아래 고정) -->
+  <div id="info_{chart_id}"
+       style="min-height:36px;margin:8px 0 6px;padding:8px 14px;
+              background:rgba(30,111,62,0.08);border-radius:8px;
+              font-size:13px;font-weight:600;color:#1a3a24;
+              border-left:3px solid #2d7a4a;display:flex;
+              align-items:center;flex-wrap:wrap;gap:8px;">
+    <span style="color:#888;font-weight:400;font-size:12px;">막대를 탭/클릭하면 수치가 표시됩니다</span>
+  </div>
+
+  <!-- ★ 하단 범례: 세로 배치 -->
+  <div style="display:flex;flex-direction:column;gap:4px;margin-top:6px;font-size:11px;color:#444;">
     <span><span style="width:12px;height:10px;background:#3a9e5f;border-radius:2px;
-                       display:inline-block;margin-right:4px;vertical-align:middle;"></span>영업이익 (+억원)</span>
+                       display:inline-block;margin-right:5px;vertical-align:middle;"></span>영업이익 (+억원)</span>
     <span><span style="width:12px;height:10px;background:#c0392b;border-radius:2px;
-                       display:inline-block;margin-right:4px;vertical-align:middle;"></span>영업이익 (-억원)</span>
+                       display:inline-block;margin-right:5px;vertical-align:middle;"></span>영업이익 (-억원)</span>
     <span><span style="width:12px;height:10px;background:#e07010;border-radius:2px;
-                       display:inline-block;margin-right:4px;vertical-align:middle;"></span>부채비율 (%)</span>
+                       display:inline-block;margin-right:5px;vertical-align:middle;"></span>부채비율 (%)</span>
   </div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
@@ -688,8 +719,25 @@ def render_financial_chart(name: str, code: str, op_series: pd.Series, debt_seri
   const opVals={json.dumps(op_vals)};
   const debtValsRaw={json.dumps(debt_vals_raw)};
   const ctx=document.getElementById('{chart_id}');
+  const infoPanel=document.getElementById('info_{chart_id}');
   if(!ctx)return;
-  new Chart(ctx,{{
+
+  function showInfo(i) {{
+    const q = quarters[i];
+    const op = opVals[i];
+    const dt = debtValsRaw[i];
+    let html = `<span style="color:#2d7a4a;font-weight:700;">${{q}}</span>`;
+    if(op !== null) {{
+      const opColor = op >= 0 ? '#1a5c30' : '#c0392b';
+      html += `&nbsp;&nbsp;<span style="color:${{opColor}};">영업이익: ${{op.toLocaleString()}}억원</span>`;
+    }}
+    if(dt !== null) {{
+      html += `&nbsp;&nbsp;<span style="color:#8a3d00;">부채비율: ${{dt.toFixed(1)}}%</span>`;
+    }}
+    infoPanel.innerHTML = html;
+  }}
+
+  const chartInst = new Chart(ctx,{{
     data:{{
       labels:quarters,
       datasets:[{{
@@ -705,33 +753,7 @@ def render_financial_chart(name: str, code: str, op_series: pd.Series, debt_seri
       maintainAspectRatio:false,
       plugins:{{
         legend:{{display:false}},
-        tooltip:{{
-          mode:'index',intersect:false,
-          // ★ 스마트폰 터치 대응: position을 'nearest'로, 툴팁을 항상 차트 안에 표시
-          position:'nearest',
-          callbacks:{{
-            title:function(items){{
-              return items.length>0 ? quarters[items[0].dataIndex] : '';
-            }},
-            label:function(c){{
-              const i=c.dataIndex;
-              const lines=[];
-              if(opVals[i]!==null) lines.push('영업이익: '+opVals[i].toLocaleString()+'억원');
-              if(debtValsRaw[i]!==null) lines.push('부채비율: '+debtValsRaw[i].toFixed(1)+'%');
-              return lines;
-            }}
-          }},
-          // ★ 툴팁이 차트 영역 밖으로 나가지 않도록
-          xAlign:'center',
-          yAlign:'bottom',
-          caretSize:6,
-          padding:10,
-          bodyFont:{{size:13}},
-          titleFont:{{size:13,weight:'bold'}},
-          backgroundColor:'rgba(20,50,30,0.92)',
-          borderColor:'#3a9e5f',
-          borderWidth:1,
-        }}
+        tooltip:{{enabled:false}}   // ★ 툴팁 완전 비활성화
       }},
       scales:{{
         x:{{
@@ -750,11 +772,13 @@ def render_financial_chart(name: str, code: str, op_series: pd.Series, debt_seri
         }}
       }},
       layout:{{padding:{{top:28,bottom:32}}}},
-      // ★ 스마트폰 터치 이벤트 대응
-      interaction:{{
-        mode:'index',
-        intersect:false,
-      }},
+      interaction:{{mode:'index',intersect:false}},
+      // ★ 클릭/터치 이벤트로 infoPanel 업데이트
+      onClick(e, elements) {{
+        if(elements && elements.length > 0) {{
+          showInfo(elements[0].index);
+        }}
+      }}
     }},
     plugins:[{{
       id:'cd_{code}',
@@ -894,9 +918,29 @@ def render_financial_chart(name: str, code: str, op_series: pd.Series, debt_seri
       }}
     }}]
   }});
+
+  // ★ 터치(모바일) 이벤트도 클릭으로 처리
+  const canvasEl = document.getElementById('{chart_id}');
+  canvasEl.addEventListener('touchstart', function(e) {{
+    e.preventDefault();
+    const touch = e.touches[0];
+    const nativeEvent = {{
+      clientX: touch.clientX,
+      clientY: touch.clientY,
+      target:  canvasEl,
+    }};
+    const elements = chartInst.getElementsAtEventForMode(
+      nativeEvent, 'index', {{intersect: false}}, true
+    );
+    if(elements && elements.length > 0) {{
+      showInfo(elements[0].index);
+    }}
+  }}, {{passive: false}});
+
 }})();
 </script>"""
-    st.components.v1.html(html, height=420, scrolling=False)
+    # 높이: 차트290 + 상하패딩 + 정보패널36 + 범례90 + 여유
+    st.components.v1.html(html, height=520, scrolling=False)
  
  
 # ── TradingView 수집 ─────────────────────────────────────────────
