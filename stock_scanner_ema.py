@@ -28,10 +28,10 @@ if ('ma_order' not in st.session_state
 if ('close_dir' not in st.session_state
         or not set(st.session_state.close_dir.keys()).issubset(VALID_KEYS)):
     st.session_state.close_dir = {
-        'sma112':    'below',   # 기본: 종가 < SMA112 (종가가 아래)
-        'sma_short': 'above',   # 기본: SMA60 < 종가
-        'sma_mid':   'above',   # 기본: SMA224 < 종가
-        'sma_long':  'above',   # 기본: SMA448 < 종가
+        'sma112':    'above',   # 기본: SMA112 < 종가 (🟢 +종가)
+        'sma_short': 'below',   # 기본: 종가 < SMA60  (🔴 -종가)
+        'sma_mid':   'above',   # 기본: SMA224 < 종가 (🟢 +종가)
+        'sma_long':  'below',   # 기본: 종가 < SMA448 (🔴 -종가)
     }
 
 if ('ma_params' not in st.session_state
@@ -976,7 +976,7 @@ def apply_price_volume_filter(data, min_price, max_price, min_vol):
     return data[mask].copy()
  
  
-# ── SMA 조건 검증 (EMA→SMA로 변경) ────────────────────────────────
+# ── SMA 조건 검증 ────────────────────────────────────────────────
 def check_ema_conditions(code_6, ma_order, ma_params, close_dir):
     sma_keys   = [k for k in ma_order if MA_TYPES[k] == 'SMA']
     max_period = max(ma_params[k] for k in sma_keys) if sma_keys else 60
@@ -1006,7 +1006,6 @@ def check_ema_conditions(code_6, ma_order, ma_params, close_dir):
             ma_vals = {}
             for key in ma_order:
                 period = ma_params[key]
-                # ★ 모두 SMA로 계산
                 ma_vals[key] = float(close.rolling(period).mean().iloc[-1])
  
             cond_order = all(
@@ -1143,7 +1142,6 @@ if st.button("🔍 종목 검색 시작", use_container_width=True):
                     fmt[c] = '{:,.0f}'
                 st.dataframe(display.style.format(fmt, na_rep="-"), use_container_width=True, hide_index=True)
 
-                # ★ 순서 변경: 재무 추이 먼저, 트레이딩뷰 차트 바로가기는 아래로
                 st.divider()
                 st.subheader("📉 종목별 분기 재무 추이 (영업이익 · 부채비율)")
                 st.caption("yfinance 분기별 재무제표 기준 | 영업이익: 억 원 | 부채비율 = 총부채 ÷ 자기자본 × 100")
@@ -1214,13 +1212,10 @@ if st.button("🔍 종목 검색 시작", use_container_width=True):
                             else:
                                 st.caption("업종 정보를 가져올 수 없습니다.")
 
-                # ★ 트레이딩뷰 차트 바로가기를 재무 추이 아래로 이동
                 st.divider()
                 st.subheader("📊 트레이딩뷰 차트 바로가기")
                 cols_ui = st.columns(5)
                 for i, row in enumerate(results):
                     with cols_ui[i % 5]:
                         st.link_button(f"📈 {row['종목명']}", get_chart_url(row['name_raw']), use_container_width=True)
- 
-st.divider()
-st.caption("본 프로그램은 TradingView·KRX·Yahoo Finance 공개 데이터를 활용하며 투자 권유를 목적으로 하지 않습니다.")
+
