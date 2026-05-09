@@ -44,7 +44,7 @@ if 'ma_order' not in st.session_state or not set(st.session_state.ma_order).issu
 if 'close_dir' not in st.session_state or not set(st.session_state.close_dir.keys()).issubset(VALID_KEYS):
     st.session_state.close_dir = {
         'sma112':    'above',   # SMA112 < 종가 (🟢 +종가)
-        'sma_short': 'below',   # 종가 < SMA60  (🔴 -종가)
+        'sma_short': 'below',   # 종가 < SMA60  (🟢 +종가)
         'sma_mid':   'above',   # SMA224 < 종가 (🟢 +종가)
         'sma_long':  'below',   # 종가 < SMA448 (🔴 -종가)
     }
